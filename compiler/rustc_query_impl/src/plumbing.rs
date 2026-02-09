@@ -512,40 +512,45 @@ pub(crate) fn make_dep_kind_vtable_for_query<
     C: QueryCache + 'tcx,
     const FLAGS: QueryFlags,
 >(
-    is_anon: bool,
     is_eval_always: bool,
 ) -> DepKindVTable<'tcx>
 where
     Q: QueryDispatcherUnerased<'tcx, C, FLAGS>,
 {
-    let fingerprint_style = if is_anon {
-        FingerprintStyle::Opaque
-    } else {
-        <C::Key as DepNodeKey<TyCtxt<'tcx>>>::fingerprint_style()
-    };
-
-    if is_anon || !fingerprint_style.reconstructible() {
-        return DepKindVTable {
-            is_anon,
+    if FLAGS.is_anon {
+        DepKindVTable {
+            is_anon: true,
             is_eval_always,
-            fingerprint_style,
+            fingerprint_style: FingerprintStyle::Opaque,
             force_from_dep_node: None,
             try_load_from_on_disk_cache: None,
             name: Q::NAME,
-        };
-    }
-
-    DepKindVTable {
-        is_anon,
-        is_eval_always,
-        fingerprint_style,
-        force_from_dep_node: Some(|tcx, dep_node, _| {
-            force_from_dep_node(Q::query_dispatcher(tcx), tcx, dep_node)
-        }),
-        try_load_from_on_disk_cache: Some(|tcx, dep_node| {
-            try_load_from_on_disk_cache(Q::query_dispatcher(tcx), tcx, dep_node)
-        }),
-        name: Q::NAME,
+        }
+    } else {
+        let fingerprint_style = <C::Key as DepNodeKey<TyCtxt<'tcx>>>::fingerprint_style();
+        if !fingerprint_style.reconstructible() {
+            DepKindVTable {
+                is_anon: false,
+                is_eval_always,
+                fingerprint_style,
+                force_from_dep_node: None,
+                try_load_from_on_disk_cache: None,
+                name: Q::NAME,
+            }
+        } else {
+            DepKindVTable {
+                is_anon: false,
+                is_eval_always,
+                fingerprint_style,
+                force_from_dep_node: Some(|tcx, dep_node, _| {
+                    force_from_dep_node(Q::query_dispatcher(tcx), tcx, dep_node)
+                }),
+                try_load_from_on_disk_cache: Some(|tcx, dep_node| {
+                    try_load_from_on_disk_cache(Q::query_dispatcher(tcx), tcx, dep_node)
+                }),
+                name: Q::NAME,
+            }
+        }
     }
 }
 
@@ -969,7 +974,6 @@ macro_rules! define_queries {
             $(pub(crate) fn $name<'tcx>() -> DepKindVTable<'tcx> {
                 use $crate::query_impl::$name::QueryType;
                 $crate::plumbing::make_dep_kind_vtable_for_query::<QueryType<'tcx>, _, _>(
-                    is_anon!([$($modifiers)*]),
                     is_eval_always!([$($modifiers)*]),
                 )
             })*
